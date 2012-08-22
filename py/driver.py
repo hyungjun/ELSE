@@ -11,63 +11,12 @@
 import  os,sys,datetime
 from    math    import log10,log
 
-from    lib_phy import calc_Esat, calc_Whgt
+from    const   import Const
+from    lib_phy import calc_Esat,calc_Whgt,calc_slopeVP,calc_psycho,    \
+                       conv_q2e,r_a,r_s
 
 #from pylab import *
 
-class Const(object):    # constants
-
-    Cd      = 0.003     # bulk transfer coefficient
-    e       = 0.62198   # ratio of molecular weights of water and dry air
-    Cp      = 10005     # Specific Heat Capacity of Air [J/Kg/K]
-    k       = 0.41      # von Karman constant [-]
-
-        
-    dictVeg = {'crop':{'height'   :0.12,          # veg. height [m]
-                       'zeroDis'  :2./3.*0.12,    # zero plane displacement              [m] 2/3*H
-                       'roughLenM':0.123*0.12,    # roughness length for momentum   flux [m] 0.123*H
-                       'roughLenH':0.123*0.12*0.1,# roughness length for heat&vapor flux [m] 0.123*H*0.1
-                      }
-              }
-
-    def __init__(self,vegType='crop'):
-        self.Veg        = self.dictVeg[vegType]
-
-        print self.Veg
-
-    # calc. air density 
-    def rho(self,PSurf=101325.,Tair=273.12+15.):    
-        '''
-        rho     = 1.225     # air density       [kg/m^3] (sea level 15degC by ISA)
-
-        PSurf               # air pressure      [pa]
-        Tair                # air temperature   [K]
-
-        '''
-        Rg      = 287.04    # specific gas constant [J/kg/K]
-        return PSurf/Tair/Rg
-
-
-def r_a(U,C,obsHgtU=2.,obsHgtQ=2.):
-    '''
-    * calc. aerodynamic resistance
-    * ref) http://www.fao.org/docrep/X0490E/x0490e06.htm
-
-      U         : observed wind speed (2m by default)   [m]
-
-      obsHgtU   : height of wind     measurements       [m]
-      obsHgtQ   : height of humidity measurements       [m]
-    '''
-
-    d       = C.Veg['zeroDis']
-    z_om    = C.Veg['roughLenM']
-    z_oh    = C.Veg['roughLenH']
-
-    obsHgtU = 2.
-    r_a     = log((obsHgtU-d)/z_om) * log((obsHgtQ-d)/z_oh)             \
-              /(U*C.k**2)
-
-    return r_a
 
 
 def calc_Epot(C,dVarIn,Esat_scheme='goff'):
@@ -114,6 +63,38 @@ def calc_H(C,dVarIn):
     rho     = C.rho(PSurf,Tair)
 
 
+def calc_ET0(C,slopeVP,Rnet,G,gamma,T2,U2,Q2,P):
+    '''
+    * calc. reference evapotranspiration using FAO P-M eq.
+    * ref) FAO ch2
+
+    slopeVP : slope vapor pressure curve        [kPa/K]
+    Rnet    : net radiation                     [W/m**2]
+    G       : soil heat flux                    [W/m**2]
+    gamma   : psychometric constant             [kPa/K]
+    T2      : 2m air temperature                [K]
+    U2      : 2m wind speed                     [m/s]
+    Q2      : 2m specific humidity              [??]
+    P       : surface pressure                  [hPa]
+    '''
+
+    Esat    = calc_Esat(T2,scheme='goff')
+    E       = conv_q2e(C,Q2,P*100.)         # conv. unit [hPa] -> [Pa]
+
+    # VPD     : saturation vapor pressure deficit [kPa]
+    VPD     = (Esat-E)/1000.                # conv. unit [hPa] -> [kPa]
+
+    Rnet    = Rnet*86400/10**6              # conv. unit [W/m^2] -> [MJ/m^2/d]
+    G       = G*86400/10**6                 # conv. unit [W/m^2] -> [MJ/m^2/d]
+
+    ET0     = (0.408*slopeVP*(Rnet-G)+gamma*900./(T2)*U2*VPD)/  \
+              (slopeVP+gamma*(1.+0.34*U2))
+
+#    print ('%g '*8)%(slopeVP,Rnet,G,gamma,T2,U2,Q2,P);print ET0;print
+
+    return ET0
+
+
 def main(*args):
 
     inputDir    = './data.1d'
@@ -149,14 +130,18 @@ def main(*args):
                    'Wind'       # Wind Speed            [m/s]
                    ]
 
+    # Open Input Files --------------------------------------------------------
     dInFile     = dict(
                     (var,file(os.path.join(
                                 inputDir,
                                 '%s.%s.%i@%ix%i.asc'%(prjName,var,sDTime.year,yIdx,xIdx)
                                            ))) 
                                 for var in varNAME)
+    # --------------------------------------------------------------------------
 
 
+    tmpOUT  = {'ET0':[]}
+    # Time integration loop ---------------------------------------------------
     for nLoop   in xrange(nTLoop):
         dVarIn  = dict((var,float(dInFile[var].readline())) 
                                 for var in varNAME)
@@ -164,16 +149,42 @@ def main(*args):
 #        Epot    = calc_Epot(C,dVarIn)
 #        print '%5.2f'%(Epot*86400), 
 
-        U10     = dVarIn['Wind']
+        U10     = dVarIn['Wind']                # 10m wind speed        [m/s]
+        T2      = dVarIn['Tair']                # 2m  air temp.         [K]
+        Q2      = dVarIn['Qair']                # 2m specific humidity  [??]
+        P       = dVarIn['PSurf']               # surface pressure      [hPa]
+
+        RSDN    = dVarIn['SWdown']              # downward solar rad.   [W/m**2]
+        RSUP    = RSDN*C.Veg['albedo']          # upward   solar rad.   [W/m**2]
+        RLDN    = dVarIn['LWdown']              # downward solar rad.   [W/m**2]
+        RLUP    = C.sig*T2**4                   # upward   solar rad.   [W/m**2]
+
+        Rnet    = RSDN-RSUP+RLDN-RLUP
+
         U2      = calc_Whgt(U10,10.,2.,C.Veg['roughLenM'])    # calc. 2m wind speed
 
-        print dVarIn['Wind'],U10,r_a(U2,C,obsHgtU=2.),207.66407000788683/U2
-#        print dVarIn['Wind'],U,r_a(U2,C,obsHgtU=2.),208./U2
+        slpVP   = calc_slopeVP(T2)
+        gamma   = calc_psycho(P)
 
-    return
+        R_a     = r_a(U2,C,obsHgtU=2.)
+        R_s     = r_s(C)
+
+#        print dVarIn['Wind'],U10,r_a(U2,C,obsHgtU=2.),207.66407000788683/U2,69.44444444
+#        print T2,U10,R_a,R_s,RSDN,RSUP,RLDN,RLUP,Rnet,gamma
+
+        ET0     = calc_ET0(C,slpVP,Rnet,0.,gamma,T2,U2,Q2,P)
+
+        tmpOUT['ET0'].append(ET0)
+
+    return  tmpOUT
 
 
 if __name__=='__main__':
-    main(*sys.argv)
+    tmpOUT  = main(*sys.argv)
+
+    from pylab import *
+    aTmp    = array(tmpOUT['ET0']).reshape(-1,4).mean(1)
+    plot(aTmp);show()
+        
 
     

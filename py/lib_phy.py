@@ -1,4 +1,4 @@
-from    math        import log
+from    math        import log,log10,exp
 
 def calc_Esat(Tair,scheme='goff'):
     EsatWater = {}
@@ -43,4 +43,77 @@ def calc_Whgt(Wind,obsHgt,outHgt,roughLen):
     Arya p199??
     '''
     return Wind*log(outHgt/roughLen)/log(obsHgt/roughLen)
+
+
+def calc_slopeVP(T):
+    '''
+    * calc. slope vapor pressure curve              [kPa/K]?
+    * ref) ??
+
+    T           : observed air temperature (2m by default)  [K]
+    '''
+    slopeVP = 4098.*(
+                     0.6108*exp(17.27*(T-273.12)/T)/
+                     T**2.
+                     )
+
+    return slopeVP
+
+
+def calc_psycho(P):
+    '''
+    * calc. psychometric constant                   [kPa/K]?
+    * ref) ??
+    '''
+    gamma   = 0.665E-3*(P/10.)              # conv. P [hPa] -> [kPa]
+
+    return gamma
+
+
+def conv_q2e(C,q,P):
+    '''
+    * conv. specific humidity to vapor pressure
+    * ref) ??
+
+    C       : constants
+    q       : specific humidity         [??]
+    P       : air pressure              [Pa]?
+    '''
+
+    w       = q/(1.-q)
+    e       = w*P/(C.e-w)
+
+    return e
+
+
+def r_a(U,C,obsHgtU=2.,obsHgtQ=2.):
+    '''
+    * calc. aerodynamic resistance
+    * ref) http://www.fao.org/docrep/X0490E/x0490e06.htm
+
+      U         : observed wind speed (2m by default)   [m]
+
+      obsHgtU   : height of wind     measurements       [m]
+      obsHgtQ   : height of humidity measurements       [m]
+    '''
+
+    d       = C.Veg['zeroDis']
+    z_om    = C.Veg['roughLenM']
+    z_oh    = C.Veg['roughLenH']
+
+    obsHgtU = 2.
+    r_a     = log((obsHgtU-d)/z_om) * log((obsHgtQ-d)/z_oh)             \
+              /(U*C.k**2)
+
+    return r_a
+
+
+def r_s(C):
+    r_l     = C.Veg['stomataR']
+    lai     = C.Veg['lai']
+    actLai  = 0.5*lai
+
+    r_s     = r_l/(actLai)
+    return r_s
+
 
