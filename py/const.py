@@ -1,9 +1,9 @@
 
 class Const(object):        # constants
 
-    Cd      = 0.003         # bulk transfer coefficient
+    Cd      = 0.003         # bulk transfer coefficient         ref) Robock et al., 1995?
     e       = 0.62198       # ratio of molecular weights of water and dry air
-    Cp      = 10005         # Specific Heat Capacity of Air [J/Kg/K]
+    Cp      = 1005          # Specific Heat Capacity of Air [J/Kg/K]
     k       = 0.41          # von Karman constant [-]
     sig     = 5.670373E-8   # Stefan-Boltzmann constant [W/m**2/K**4]
         

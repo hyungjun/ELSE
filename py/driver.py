@@ -1,4 +1,4 @@
-#! /usr/local/bin/python
+#! /usr/bin/python
 #--------------------------------------
 # PROG : driver.py	 <by hjkim@IIS>
 # VER  : <2012-07-21 12:30:51.424602>
@@ -44,8 +44,11 @@ def calc_Epot(C,dVarIn,Esat_scheme='goff'):
     return Epot
 
 
-def calc_H(C,dVarIn):
+def calc_H(C,dVarIn,dVarState):
     '''
+    * calc. sensible heat flux
+    * ref) 
+
     H               : Sensible Heat [W/m^2]
 
     C               : Constants
@@ -57,10 +60,15 @@ def calc_H(C,dVarIn):
 
     PSurf   = dVarIn['PSurf']*100.      # unit conv. [hPa] -> [Pa]
     Tair    = dVarIn['Tair']
-    U       = dVarIn['Wind']
-    Qair    = dVarIn['Qair']
+    U10     = dVarIn['Wind']
 
     rho     = C.rho(PSurf,Tair)
+
+    Ts      = dVarState['Ts']
+
+    H       = Cp*rho*Cd*U10*(Ts-Tair)
+
+    return H
 
 
 def calc_ET0(C,slopeVP,Rnet,G,gamma,T2,U2,Q2,P):
@@ -93,6 +101,26 @@ def calc_ET0(C,slopeVP,Rnet,G,gamma,T2,U2,Q2,P):
 #    print ('%g '*8)%(slopeVP,Rnet,G,gamma,T2,U2,Q2,P);print ET0;print
 
     return ET0
+
+
+#def update_Ts(C.Veg['albedo'],RSDN,RLDN,C.sig,ET0,H):
+def update_Ts(C,dVarIn,ET0,H):
+
+    albedo  = C.Veg['albedo']
+    
+    RSDN    = dVarIn['SWdown']
+    RLDN    = dVarIn['LWdown']
+
+    sigma   = C.sig
+
+    print RSDN,RLDN
+    print ET0, H
+    print (1.-albedo)*RSDN
+    print sigma
+    print ((1.-albedo)*RSDN+RLDN-ET0-H)
+    Ts      = (((1.-albedo)*RSDN+RLDN-ET0-H)/sigma)**(1./4.)
+
+    return Ts
 
 
 def main(*args):
@@ -138,6 +166,11 @@ def main(*args):
                                            ))) 
                                 for var in varNAME)
     # --------------------------------------------------------------------------
+    # Declare State Variables
+    dVarState   = {
+                   'Ts':273.15, # Skin Temp.
+                   'Td':274.15, # Soil Temp.
+                    }
 
 
     tmpOUT  = {'ET0':[]}
@@ -149,15 +182,22 @@ def main(*args):
 #        Epot    = calc_Epot(C,dVarIn)
 #        print '%5.2f'%(Epot*86400), 
 
+        # Read State Variable -------------------------------------------------
+        Ts      = dVarState['Ts']               # Skin Temp.            [K]
+        # ---------------------------------------------------------------------
+
+        # Read Forcing Variable -----------------------------------------------
         U10     = dVarIn['Wind']                # 10m wind speed        [m/s]
         T2      = dVarIn['Tair']                # 2m  air temp.         [K]
         Q2      = dVarIn['Qair']                # 2m specific humidity  [??]
         P       = dVarIn['PSurf']               # surface pressure      [hPa]
 
         RSDN    = dVarIn['SWdown']              # downward solar rad.   [W/m**2]
-        RSUP    = RSDN*C.Veg['albedo']          # upward   solar rad.   [W/m**2]
         RLDN    = dVarIn['LWdown']              # downward solar rad.   [W/m**2]
-        RLUP    = C.sig*T2**4                   # upward   solar rad.   [W/m**2]
+        # ---------------------------------------------------------------------
+
+        RSUP    = RSDN*C.Veg['albedo']          # upward   solar rad.   [W/m**2]
+        RLUP    = C.sig*Ts**4                   # upward   solar rad.   [W/m**2]
 
         Rnet    = RSDN-RSUP+RLDN-RLUP
 
@@ -173,6 +213,9 @@ def main(*args):
 #        print T2,U10,R_a,R_s,RSDN,RSUP,RLDN,RLUP,Rnet,gamma
 
         ET0     = calc_ET0(C,slpVP,Rnet,0.,gamma,T2,U2,Q2,P)
+        H       = calc_H(C,dVarIn,dVarState)
+
+        dVarState['Ts'] = update_Ts(C,dVarIn,ET0,H)
 
         tmpOUT['ET0'].append(ET0)
 
