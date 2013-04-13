@@ -1,3 +1,5 @@
+from    numpy   import sqrt
+
 
 class Const(object):        # constants
 
@@ -6,6 +8,11 @@ class Const(object):        # constants
     Cp      = 1005          # Specific Heat Capacity of Air [J/Kg/K]
     k       = 0.41          # von Karman constant [-]
     sig     = 5.670373E-8   # Stefan-Boltzmann constant [W/m**2/K**4]
+
+    Cs      = 13000.        # heat capacity of the surface layer [J/m**2/K]
+    Cd_     = sqrt(365.)*Cs # heat capacity of the deep layer [J/m**2/K]
+    w       = 1./(24.*60.*60.)  # time constant [1/s]
+
         
     dictVeg = {'crop':{'height'   :0.12,          # veg. height [m]
                        'zeroDis'  :2./3.*0.12,    # zero plane displacement              [m] 2/3*H

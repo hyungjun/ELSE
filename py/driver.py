@@ -67,6 +67,7 @@ def calc_H(C,dVarIn,dVarState):
     Ts      = dVarState['Ts']
 
     H       = Cp*rho*Cd*U10*(Ts-Tair)
+#    print '***H***',H, Cp,rho,Cd,U10,Ts,Tair
 
     return H
 
@@ -104,23 +105,26 @@ def calc_ET0(C,slopeVP,Rnet,G,gamma,T2,U2,Q2,P):
 
 
 #def update_Ts(C.Veg['albedo'],RSDN,RLDN,C.sig,ET0,H):
-def update_Ts(C,dVarIn,ET0,H):
+def update_Ts(C,dVarState,Rnet,ET0,H):
 
-    albedo  = C.Veg['albedo']
-    
-    RSDN    = dVarIn['SWdown']
-    RLDN    = dVarIn['LWdown']
+    Ts      = dVarState['Ts']
+    Td      = dVarState['Td']
 
-    sigma   = C.sig
+    print '-'*10
+    print Ts,Td
+    print Rnet,ET0,H
+    print C.w,C.Cs,C.dT
+    print '-'*10
+    Ts_nxt  = Ts + (Rnet-ET0-H- C.w*C.Cs*(Ts-Td))/C.Cs*C.dT
 
-    print RSDN,RLDN
-    print ET0, H
-    print (1.-albedo)*RSDN
-    print sigma
-    print ((1.-albedo)*RSDN+RLDN-ET0-H)
-    Ts      = (((1.-albedo)*RSDN+RLDN-ET0-H)/sigma)**(1./4.)
+    return Ts_nxt
 
-    return Ts
+
+def update_Td(C,dVarState,Rnet,ET0,H):
+    Td      = dVarState['Td']
+    Td_nxt  = Td + (Rnet-ET0-H)/C.Cd_*C.dT
+
+    return Td_nxt
 
 
 def main(*args):
@@ -129,10 +133,6 @@ def main(*args):
 
     prjName     = 'Prcp_GPCC'
     xIdx,yIdx   = 100,140
-
-    vegType     = 'crop'
-
-    C           = Const(vegType)
 
     sDTime      = datetime.datetime(2000,1,1,0,0)
     eDTime      = datetime.datetime(2001,1,1,0,0)
@@ -144,6 +144,11 @@ def main(*args):
     dTsec       = dT.total_seconds()
 
     nTLoop      = int(totSec/dTsec)
+
+    vegType     = 'crop'
+    C           = Const(vegType)
+    C.dT        = dT.seconds
+    C.dT        = 600.
 
     varNAME     = [
                    'CCOV',
@@ -168,14 +173,19 @@ def main(*args):
     # --------------------------------------------------------------------------
     # Declare State Variables
     dVarState   = {
-                   'Ts':273.15, # Skin Temp.
-                   'Td':274.15, # Soil Temp.
+                   'Ts':243.15, # Skin Temp.
+                   'Td':244.15, # Soil Temp.
                     }
 
 
-    tmpOUT  = {'ET0':[]}
+    tmpOUT  = {'Rnet':[],
+               'ET0'  :[],
+               'H'  :[],
+               'Td' :[],
+               'Ts' :[],}
+
     # Time integration loop ---------------------------------------------------
-    for nLoop   in xrange(nTLoop):
+    for ii,nLoop   in enumerate(xrange(nTLoop)):
         dVarIn  = dict((var,float(dInFile[var].readline())) 
                                 for var in varNAME)
         
@@ -184,6 +194,7 @@ def main(*args):
 
         # Read State Variable -------------------------------------------------
         Ts      = dVarState['Ts']               # Skin Temp.            [K]
+        Td      = dVarState['Td']               # Soil Temp.            [K]
         # ---------------------------------------------------------------------
 
         # Read Forcing Variable -----------------------------------------------
@@ -215,9 +226,20 @@ def main(*args):
         ET0     = calc_ET0(C,slpVP,Rnet,0.,gamma,T2,U2,Q2,P)
         H       = calc_H(C,dVarIn,dVarState)
 
-        dVarState['Ts'] = update_Ts(C,dVarIn,ET0,H)
+#        print '#',ii,Rnet,RSDN,RSUP,RLDN,RLUP,T2,ET0,H,Ts,Td
+#        if ii > 10: sys.exit()
 
+
+        print '***Ts***:',dVarState['Ts']
+        dVarState['Td'] = update_Td(C,dVarState,Rnet,ET0,H)
+        dVarState['Ts'] = update_Ts(C,dVarState,Rnet,ET0,H)
+        print '***Ts_nxt***:',dVarState['Ts']
+
+        tmpOUT['Rnet'].append(Rnet)
         tmpOUT['ET0'].append(ET0)
+        tmpOUT['H'  ].append(H)
+        tmpOUT['Td' ].append(dVarState['Td'])
+        tmpOUT['Ts' ].append(dVarState['Ts'])
 
     return  tmpOUT
 
@@ -226,8 +248,30 @@ if __name__=='__main__':
     tmpOUT  = main(*sys.argv)
 
     from pylab import *
-    aTmp    = array(tmpOUT['ET0']).reshape(-1,4).mean(1)
-    plot(aTmp);show()
+    figure()
+    subplot(211)
+    var     = 'Ts'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp)
+    
+    var     = 'Td'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp,'k')
+    
+    subplot(212)
+    var     = 'Rnet'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp,'k')
+    
+    var     = 'ET0'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp,'b')
+    
+    var     = 'H'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp,'r')
+    
+    show()
         
 
     
