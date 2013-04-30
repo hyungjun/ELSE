@@ -15,11 +15,9 @@ from    const   import Const
 from    lib_phy import calc_Esat,calc_Whgt,calc_slopeVP,calc_psycho,    \
                        conv_q2e,r_a,r_s
 
-#from pylab import *
 
 
-
-def calc_Epot(C,dVarIn,Esat_scheme='goff'):
+def calc_Epot(C,dVarIn,dVarState,Esat_scheme='goff'):
     '''
     Epot            : potential evaporation [kg/m^2/s]
 
@@ -35,13 +33,15 @@ def calc_Epot(C,dVarIn,Esat_scheme='goff'):
     U       = dVarIn['Wind']
     Qair    = dVarIn['Qair']
 
+    Ts      = dVarState['Ts']
+
     rho     = C.rho(PSurf,Tair)
-    Esat    = calc_Esat(Tair,scheme=Esat_scheme)
+    Esat    = calc_Esat(Ts,scheme=Esat_scheme)
     Qsat    = e*Esat/(PSurf-Esat)
 
     Epot    = rho*Cd*U*(Qsat-Qair)
 
-    return Epot
+    return Epot*86400*0.408/0.0864      # unit conv. [kg/m^2/s] -> W/m^2
 
 
 def calc_H(C,dVarIn,dVarState):
@@ -223,7 +223,8 @@ def main(*args):
 #        print dVarIn['Wind'],U10,r_a(U2,C,obsHgtU=2.),207.66407000788683/U2,69.44444444
 #        print T2,U10,R_a,R_s,RSDN,RSUP,RLDN,RLUP,Rnet,gamma
 
-        ET0     = calc_ET0(C,slpVP,Rnet,0.,gamma,T2,U2,Q2,P)
+#        ET0     = calc_ET0(C,slpVP,Rnet,0.,gamma,T2,U2,Q2,P)
+	ET0	= calc_Epot(C,dVarIn,dVarState,Esat_scheme='goff')
         H       = calc_H(C,dVarIn,dVarState)
 
 #        print '#',ii,Rnet,RSDN,RSUP,RLDN,RLUP,T2,ET0,H,Ts,Td
@@ -270,6 +271,11 @@ if __name__=='__main__':
     var     = 'H'
     aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
     plot(aTmp,'r')
+    
+    figure()
+    var     = 'ET0'
+    aTmp    = array(tmpOUT[var]).reshape(-1,4).mean(1)
+    plot(aTmp,'b')
     
     show()
         
